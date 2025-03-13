@@ -91,7 +91,7 @@ def create_mtlx_from_files(texture_files: dict[str, str], name: str):
         normal_tex_node.parm("signature").set("vector3")
         normal_map = subnet.createNode("mtlxnormalmap")
         normal_map.setNamedInput("in", normal_tex_node, "out")
-        mtlx_shader.FetNamedInput("normal", normal_map, "out")
+        mtlx_shader.setNamedInput("normal", normal_map, "out")
 
     # Displacement
     if (displacement := texture_files["Displacement"]) is not None:
