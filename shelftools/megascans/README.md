@@ -3,6 +3,9 @@ Shelf tools to quickly import Quixel Megascans surfaces into MaterialX for use i
 
 These tools look for `Albedo`, `Roughness`, `Normal`, and `Displacement` maps only. Quixel seems to prefer these four maps in their plugin but more can be manual added of course once the material is set up.
 
+## YouTube Video
+https://www.youtube.com/watch?v=4vdZoGIoyUc
+
 ## Installation
 1. Copy all `.shelf` files to `houdini20.5\toolbar` (usually in Documents on Windows)
 2. Launch Houdini
