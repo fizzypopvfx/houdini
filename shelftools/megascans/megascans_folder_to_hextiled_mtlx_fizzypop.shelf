@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <!-- This file contains definitions of shelves, toolbars, and tools.
+ It should not be hand-edited when it is being used by the application.
+ Note, that two definitions of the same element are not allowed in
+ a single file. -->
+
+  <tool name="megascans_folder_to_hextiled_mtlx_fizzypop" label="Mega Folder to Hex MtlX (FIZZYPOP!)" icon="PLASMA_App">
+    <script scriptType="python"><![CDATA[import hou
+import os
+from pathlib import Path
+import voptoolutils
+
+
+def get_texture_file_paths(folder_path: str) -> dict[str, str]:
+    # Dictionary to store file paths
+    texture_files = {
+        "Albedo": None,
+        "Normal": None,
+        "Roughness": None,
+        "Displacement": None,
+    }
+
+    # Scan the folder for matching files
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+
+        if os.path.isfile(file_path):
+            lower_name = filename.lower()
+
+            if "albedo" in lower_name and texture_files["Albedo"] is None:
+                texture_files["Albedo"] = file_path
+            elif "normal" in lower_name and texture_files["Normal"] is None:
+                texture_files["Normal"] = file_path
+            elif "roughness" in lower_name and texture_files["Roughness"] is None:
+                texture_files["Roughness"] = file_path
+            elif "displacement" in lower_name and texture_files["Displacement"] is None:
+                texture_files["Displacement"] = file_path
+
+    # If Albedo is missing, look for BaseColor
+    if texture_files["Albedo"] is None:
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+
+            if os.path.isfile(file_path) and "basecolor" in filename.lower():
+                texture_files["Albedo"] = file_path
+                break
+
+    # Print the selected files
+    for key, path in texture_files.items():
+        print(f"{key}: {path if path else 'Not Found'}")
+
+    # If any texture is missing, show a warning
+    missing_textures = [key for key, path in texture_files.items() if path is None]
+    if missing_textures:
+        hou.ui.displayMessage(
+            f"Missing textures: {', '.join(missing_textures)}", title="Warning"
+        )
+
+    return texture_files
+
+
+def create_mtlx_from_files(texture_files: dict[str, str], name: str):
+    matnet = hou.node("/mat")
+
+    # Karma Material Builder
+    new_mat_name = f"{name}_MtlX"
+    subnet = voptoolutils._setupMtlXBuilderSubnet(
+        destination_node=matnet,
+        name=new_mat_name,
+        mask=voptoolutils.KARMAMTLX_TAB_MASK,
+        folder_label=new_mat_name,
+    )
+
+    # MaterialX Standard Surface
+    mtlx_shader = subnet.node("mtlxstandard_surface")
+
+    # Blank color node to use as reference if base color is missing
+    color_tex_node = create_hex_node(subnet, "base_color", "")
+
+    # Base Color
+    if (albedo := texture_files["Albedo"]) is not None:
+        color_tex_node.parm("file").set(albedo)
+        mtlx_shader.setNamedInput("base_color", color_tex_node, "out")
+
+    # Roughness
+    if (roughness := texture_files["Roughness"]) is not None:
+        rough_tex_node = create_hex_node(subnet, "specular_roughness", roughness)
+        mtlx_shader.setNamedInput("specular_roughness", rough_tex_node, "out")
+        set_relative_references(color_tex_node, rough_tex_node)
+
+    # Normal Map
+    if (normal := texture_files["Normal"]) is not None:
+        normal_tex_node = create_hex_node(subnet, "normal_texture", normal)
+        normal_tex_node.parm("signature").set("normals")
+        mtlx_shader.setNamedInput("normal", normal_tex_node, "out")
+        set_relative_references(color_tex_node, normal_tex_node)
+
+    # Displacement
+    if (displacement := texture_files["Displacement"]) is not None:
+        mtlx_displacement = subnet.node("mtlxdisplacement")
+        mtlx_displacement.parm("scale").set(0.1)
+        sep_4c = subnet.createNode("mtlxseparate4c")
+        remap = subnet.createNode("mtlxremap")
+        remap.parm("outlow").set(-0.5)  # Remap to -0.5 and 0.5 for Megascans
+        remap.parm("outhigh").set(0.5)
+        disp_tex_node = create_hex_node(subnet, "displacement_texture", displacement)
+        set_relative_references(color_tex_node, disp_tex_node)
+
+        sep_4c.setNamedInput("in", disp_tex_node, "out")
+        remap.setNamedInput("in", sep_4c, "outr")
+        mtlx_displacement.setNamedInput("displacement", remap, "out")
+
+    # Tweaks
+    color_tex_node.parm("rand_rot").set(0.0)
+
+    # Layout
+    subnet.layoutChildren()
+    subnet.moveToGoodPosition()
+
+
+def create_hex_node(parent: hou.Node, name: str, imagePath: str) -> hou.Node:
+    tex_node = parent.createNode("kma_hextiled_triplanar", f"tex_{name}")
+    tex_node.parm("file").set(imagePath)
+    return tex_node
+
+
+def set_relative_references(fromNode: hou.Node, toNode: hou.Node):
+    params = {
+        "size",
+        "rand_scale",
+        "rand_rot",
+        "seed",
+        "contrast",
+        "contrast_falloff",
+        "weightexp",
+        "blend",
+    }
+
+    for paramName in params:
+        toNode.parm(paramName).set(fromNode.parm(paramName))
+
+
+# Select Megascans Texture Folder
+folder_path = hou.ui.selectFile(
+    title="Select Megascans Texture Folder", file_type=hou.fileType.Directory
+)
+
+# Ensure a folder was selected
+if not folder_path:
+    hou.ui.displayMessage(
+        "No folder selected.", title="Error", severity=hou.severityType.Error
+    )
+    raise RuntimeError("No folder selected.")
+
+texture_files = get_texture_file_paths(folder_path)
+create_mtlx_from_files(texture_files, Path(folder_path).name)
+]]></script>
+  </tool>
+</shelfDocument>
